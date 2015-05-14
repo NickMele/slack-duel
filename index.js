@@ -2,14 +2,15 @@ var WebSocket = require('ws');
 var request = require('request');
 var randomWord = require('random-word');
 var cool = require('cool-ascii-faces');
-var gm = require('gm').subClass({ imageMagick: true });
+var gm = require('gm');
 var fs = require('fs');
+var Promise = require('bluebird');
 
 var botToken = process.env.SLACK_BOT_TOKEN;
 var apiToken = process.env.SLACK_API_TOKEN;
 
 var apiUrl = 'https://slack.com/api/';
-var trigger = /let's duel/i;
+var trigger = /let's fight/i;
 var pingInterval = 15000;
 
 function connect () {
@@ -51,7 +52,7 @@ function sockets (e, r, b) {
 
   // message receiver
   ws.on('message', function (data, flags) {
-    console.log(data);
+    // console.log(data);
     data = JSON.parse(data);
 
     // check trigger
@@ -62,16 +63,21 @@ function sockets (e, r, b) {
       var count = countDown + 2;
       var startText = users[data.user] + ' wants to duel!';
 
+      var create = createImage(currentWord);
+
       // start duel countdown
       var duel = setInterval(function () {
-        if (--count === 0) {
-          sendImage(currentWord, data.channel);
+        --count;
+        if (count === 1) {
+          create.then(sendImage(data.channel));
           // ws.send(JSON.stringify({
           //  id: id++,
           //  type: 'message',
           //  channel: data.channel,
           //  text: currentWord
           // }));
+        }
+        if (count === 0) {
           return clearInterval(duel);
         }
 
@@ -103,7 +109,7 @@ function sockets (e, r, b) {
 
   // pong receiver
   ws.on('pong', function (data, flags) {
-    console.log(data);
+    // console.log(data);
     pong = JSON.parse(data).time;
   });
 
@@ -123,23 +129,28 @@ function sockets (e, r, b) {
   }, pingInterval)
 }
 
-function sendImage (word, channel) {
-  var h = 60;
-  var w = 400;
-  var bgColor = '#ffffff';
-  var textColor = '#000000';
+function createImage (word) {
+  return new Promise(function(resolve, reject) {
+    var h = 60;
+    var w = 400;
+    var bgColor = '#ffffff';
+    var textColor = '#000000';
 
-  gm(w, h, bgColor)
-  .fontSize(35)
-  .fill(textColor)
-  .drawText(20, h-20, word)
-  //.toBuffer('png', function (error, buffer) {
-  //.stream('png', function (error, stdout, stderr) {
-  .write('./image.png', function (error) {
-    if (error) {
-      console.log(error);
-    }
+    gm(w, h, bgColor)
+      .fontSize(35)
+      .fill(textColor)
+      .drawText(20, h-20, word)
+      .write('./image.png', function (error) {
+        if (error) {
+          return reject(error);
+        }
+        return resolve();
+      });
+  });
+}
 
+function sendImage (channel) {
+  return function() {
     request({
       method: 'POST',
       uri: apiUrl + 'files.upload',
@@ -149,11 +160,11 @@ function sendImage (word, channel) {
         channels: channel
       }
     }, function (error, response, body) {
-      console.log(body);
+      // console.log(body);
     });
-  });
+  }
 }
 
 connect();
-//sendImage('foobar', 'G029KFACQ');
+// createImage('foobar', 'G029KFACQ');
 
